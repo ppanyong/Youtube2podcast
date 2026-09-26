@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+
+# 本机密钥和任务记录。仓库里只保留 .env.example。
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.sqlite
+*.sqlite3

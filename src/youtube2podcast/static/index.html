@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>成长书房 · 长视频翻译并转化为可以听的播客</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,640&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #1c140e;
+      --walnut: #24170f;
+      --paper: #f6efe2;
+      --paper-deep: #efe4d2;
+      --copper: #c4622d;
+      --moss: #2f5d45;
+      --fail: #8d2f2a;
+      --skip: #8a5a24;
+      --line: rgba(28, 20, 14, 0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--paper);
+      font-family: "Noto Serif SC", "Songti SC", serif;
+      background:
+        radial-gradient(900px 420px at 8% -8%, rgba(232, 176, 122, 0.22), transparent 58%),
+        radial-gradient(700px 380px at 100% 8%, rgba(47, 93, 69, 0.22), transparent 52%),
+        linear-gradient(180deg, #3a2618 0%, var(--walnut) 28%, #140d09 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.22;
+      background-image:
+        linear-gradient(180deg, rgba(255, 236, 214, 0.05), transparent 18%),
+        radial-gradient(rgba(246, 239, 226, 0.4) 0.55px, transparent 0.55px);
+      background-size: auto, 3px 3px;
+    }
+    .wrap {
+      position: relative;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 40px 24px 72px;
+    }
+    header { margin-bottom: 28px; }
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: 0.32em;
+      font-size: 12px;
+      color: #e7c2a4;
+    }
+    .kicker::before {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: linear-gradient(90deg, var(--copper), transparent);
+    }
+    h1 {
+      margin: 8px 0 6px;
+      font-family: Fraunces, "Noto Serif SC", serif;
+      font-weight: 560;
+      font-size: clamp(40px, 6vw, 68px);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+    }
+    .lede { max-width: 36em; color: #eadcc8; font-size: 16px; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .slip, .ticket, .empty {
+      background:
+        linear-gradient(180deg, rgba(255, 252, 246, 0.72), rgba(255, 252, 246, 0) 28%),
+        var(--paper);
+      color: var(--ink);
+      border: 1px solid rgba(255, 236, 214, 0.28);
+      border-radius: 4px 18px 6px 14px;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 250, 242, 0.85),
+        0 22px 48px rgba(0, 0, 0, 0.32);
+    }
+    .slip { padding: 22px 22px 18px; position: sticky; top: 18px; }
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      color: #8a6d55;
+      font-size: 12px;
+      letter-spacing: 0.16em;
+    }
+    input, textarea {
+      width: 100%;
+      border: none;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      font: inherit;
+      color: inherit;
+      padding: 8px 0;
+      resize: vertical;
+    }
+    textarea { min-height: 108px; }
+    input:focus, textarea:focus { outline: none; border-bottom-color: var(--copper); }
+    button {
+      margin-top: 18px;
+      width: 100%;
+      border: none;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #2c1d14, #120c09);
+      color: var(--paper);
+      font: inherit;
+      letter-spacing: 0.18em;
+      padding: 13px 14px;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 214, 176, 0.18);
+    }
+    #submit:hover { background: #100b08; }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    button.continue {
+      width: auto;
+      margin: 0;
+      padding: 0 0 1px;
+      border: none;
+      border-bottom: 1px solid currentColor;
+      background: transparent;
+      color: var(--copper);
+      font-size: 13px;
+      letter-spacing: 0.16em;
+    }
+    button.continue:hover { color: var(--ink); }
+    button.quiet {
+      width: auto;
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #8a7562;
+      font-size: 13px;
+      letter-spacing: 0.12em;
+    }
+    button.quiet:hover { color: var(--fail); }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    a.gear {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      color: #e7c2a4;
+      text-decoration: none;
+      border: 1px solid rgba(231, 194, 164, 0.35);
+      border-radius: 50%;
+    }
+    a.gear:hover { color: var(--paper); border-color: var(--paper); }
+    .picker-row { display: flex; align-items: flex-end; gap: 10px; }
+    .picker-row input { flex: 1; }
+    button.choose {
+      width: auto;
+      margin: 0 0 6px;
+      padding: 6px 10px;
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      letter-spacing: 0.08em;
+      font-size: 13px;
+    }
+    .sheet {
+      position: fixed;
+      inset: 0;
+      background: rgba(28, 20, 14, 0.45);
+      display: grid;
+      place-items: center;
+      z-index: 2;
+    }
+    .sheet[hidden] { display: none; }
+    .sheet .card {
+      width: min(480px, calc(100% - 32px));
+      max-height: 70vh;
+      overflow: auto;
+      background: var(--paper);
+      color: var(--ink);
+      padding: 20px;
+      border-radius: 8px;
+    }
+    .sheet button.dir {
+      width: 100%;
+      margin: 0;
+      padding: 8px 0;
+      text-align: left;
+      background: transparent;
+      color: var(--ink);
+      letter-spacing: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .modes { display: flex; gap: 16px; margin-bottom: 8px; }
+    .modes button {
+      width: auto;
+      margin: 0;
+      padding: 0 0 4px;
+      background: transparent;
+      color: #8a7562;
+      letter-spacing: 0.08em;
+    }
+    .modes button.on { color: var(--ink); border-bottom: 2px solid var(--copper); }
+    .settings h3 {
+      margin: 16px 0 0;
+      font-family: Fraunces, "Noto Serif SC", serif;
+      font-size: 18px;
+      font-weight: 520;
+    }
+    .ok { color: var(--moss); font-size: 13px; min-height: 1.2em; }
+    .hint { margin: 12px 0 0; font-size: 12px; color: #6d5846; }
+    .error { color: var(--fail); font-size: 13px; min-height: 1.2em; }
+    .board h2 {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 4px 0 16px;
+      font-family: Fraunces, serif;
+      font-weight: 520;
+      font-size: 28px;
+    }
+    .board h2::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(231, 194, 164, 0.7), transparent 80%);
+    }
+    .empty { padding: 28px; color: #6d5846; }
+    .ticket {
+      position: relative;
+      padding: 18px 18px 16px 22px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      transition: box-shadow 180ms ease, transform 180ms ease;
+    }
+    .ticket::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 16px;
+      bottom: 16px;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+      background: linear-gradient(180deg, #f0c7a4, var(--copper) 42%, #7a3414);
+    }
+    .ticket:hover {
+      transform: translateY(-1px);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 250, 242, 0.85),
+        0 28px 54px rgba(0, 0, 0, 0.38);
+    }
+    .ticket header, .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    .title { font-weight: 600; font-size: 18px; }
+    .meta { color: #6d5846; font-size: 13px; margin-top: 4px; word-break: break-all; }
+    a.source {
+      display: inline-block;
+      max-width: 100%;
+      margin-top: 8px;
+      color: #8a3d16;
+      font-size: 13px;
+      line-height: 1.45;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(196, 98, 45, 0.55);
+      word-break: break-all;
+    }
+    a.source::after {
+      content: " ↗";
+      font-size: 12px;
+    }
+    a.source:hover { color: var(--ink); border-bottom-color: var(--ink); }
+    .mark {
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+      min-width: 4.5em;
+      padding-top: 4px;
+    }
+    .state {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: Fraunces, "Noto Serif SC", serif;
+      font-size: 13px;
+      letter-spacing: 0.2em;
+      line-height: 1;
+    }
+    .state::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .state.done { color: var(--moss); }
+    .state.failed { color: var(--fail); }
+    .state.skipped, .state.stopped { color: var(--skip); }
+    .state.running, .state.queued { color: var(--copper); }
+    .player {
+      display: grid;
+      grid-template-columns: 28px auto minmax(80px, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 7px 8px 7px 7px;
+      background: rgba(28, 20, 14, 0.045);
+      border-radius: 999px;
+    }
+    button.play {
+      width: 28px;
+      height: 28px;
+      margin: 0;
+      padding: 0;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--paper);
+      letter-spacing: 0;
+      display: grid;
+      place-items: center;
+    }
+    button.play i {
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 5px 0 5px 8px;
+      border-color: transparent transparent transparent currentColor;
+      margin-left: 2px;
+    }
+    button.play.on i {
+      width: 8px;
+      height: 9px;
+      margin-left: 0;
+      border: none;
+      background:
+        linear-gradient(currentColor, currentColor) left / 2px 9px no-repeat,
+        linear-gradient(currentColor, currentColor) right / 2px 9px no-repeat;
+    }
+    .player .time {
+      font-family: Fraunces, "Noto Serif SC", serif;
+      font-size: 12px;
+      color: #6d5846;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.03em;
+    }
+    .player input.scrub {
+      width: 100%;
+      height: 18px;
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      accent-color: var(--copper);
+      cursor: pointer;
+    }
+    .timeline {
+      margin: 16px 0 4px;
+      padding: 12px 0 0 4px;
+      border-top: 1px solid rgba(28, 20, 14, 0.08);
+      display: none;
+    }
+    .ticket.open .timeline { display: block; }
+    .step {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 10px;
+      position: relative;
+    }
+    .step i {
+      width: 9px; height: 9px; margin-top: 6px;
+      border-radius: 50%;
+      border: 1.5px solid #b7a48d;
+      background: transparent;
+    }
+    .step.did i { background: var(--copper); border-color: var(--copper); }
+    .step span { font-size: 14px; padding-bottom: 8px; }
+    .step small { display: block; color: #6d5846; }
+    footer.copy {
+      margin-top: 36px;
+      color: #cbb9a4;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+    }
+    footer.copy a { color: #e7c2a4; }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+      .slip { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <div class="kicker">成长书房</div>
+        <h1>长视频翻译并转化为可以听的播客</h1>
+        <p class="lede">贴上带英文字幕的 YouTube 链接。这边会记下每一次：取字幕、译成中文、合成一条音频，再把笔记放进你指定的目录。</p>
+      </div>
+      <a class="gear" href="/settings" aria-label="配置">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 1.4v2.1M8 12.5v2.1M1.4 8h2.1M12.5 8h2.1M3.2 3.2l1.5 1.5M11.3 11.3l1.5 1.5M12.8 3.2l-1.5 1.5M4.7 11.3l-1.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </a>
+    </header>
+    <div class="layout">
+      <div class="slip">
+        <form id="form">
+          <label for="urls">视频链接，一行一条</label>
+          <textarea id="urls" name="urls" placeholder="https://www.youtube.com/watch?v=..." required></textarea>
+          <label for="output">成品目录</label>
+          <div class="picker-row">
+            <input id="output" name="output_dir" placeholder="选择一个目录" required readonly />
+            <button type="button" class="choose" id="choose-output">选择</button>
+          </div>
+          <p class="error" id="error"></p>
+          <button type="submit" id="submit">开始这一集</button>
+          <p class="hint">专辑名会用视频标题。没有英文字幕的视频会跳过，并在任务里写明原因。</p>
+        </form>
+      </div>
+      <section class="board">
+        <h2>任务纸条</h2>
+        <div id="list"></div>
+      </section>
+    </div>
+    <div class="sheet" id="picker" hidden>
+      <div class="card">
+        <p id="picker-path"></p>
+        <div id="picker-list"></div>
+        <button type="button" class="choose" id="picker-up">上一级</button>
+        <button type="button" id="picker-use">使用这个目录</button>
+      </div>
+    </div>
+    <footer class="copy">Copyright © 2026 成长书房 · MIT License</footer>
+  </div>
+  <script>
+    const STAGES = [
+      ["queued", "排队"],
+      ["fetching", "获取字幕"],
+      ["translating", "翻译"],
+      ["summarizing", "写小结"],
+      ["tts", "转音频"],
+      ["tagging", "写入专辑"],
+      ["done", "完成"],
+    ];
+    const STATUS = { queued: "排队", running: "进行中", done: "完成", skipped: "跳过", failed: "失败", stopped: "已停止" };
+    const form = document.getElementById("form");
+    const list = document.getElementById("list");
+    const errorBox = document.getElementById("error");
+    const openIds = new Set();
+    const audios = new Map();
+
+    async function loadDefaults() {
+      const data = await fetch("/api/config").then((r) => r.json());
+      if (data.output_dir) document.getElementById("output").value = data.output_dir;
+    }
+
+    function clock(value) {
+      if (!value) return "";
+      return String(value).slice(11, 16);
+    }
+
+    function parseLocal(value) {
+      const [date, time] = String(value).split("T");
+      const [year, month, day] = date.split("-").map(Number);
+      const [hour, minute, second] = (time || "0:0:0").split(":").map(Number);
+      return new Date(year, month - 1, day, hour || 0, minute || 0, second || 0);
+    }
+
+    function durationText(task) {
+      if (!task.started_at) return "";
+      const start = parseLocal(task.started_at);
+      const end = task.finished_at ? parseLocal(task.finished_at) : new Date();
+      const minutes = Math.max(0, Math.round((end - start) / 60000));
+      const span = task.finished_at ? `${clock(task.started_at)}–${clock(task.finished_at)}` : `${clock(task.started_at)} 开始`;
+      return `${span} · ${task.finished_at ? "用时" : "已进行"} ${minutes} 分钟`;
+    }
+
+    function timeline(task) {
+      if (task.status === "skipped") {
+        return `<div class="step did"><i></i><span>跳过<small>${escapeHtml(task.detail || "")}</small></span></div>`;
+      }
+      const events = task.events || [];
+      const reached = new Set(events.map((item) => item.stage));
+      if (task.stage) reached.add(task.stage);
+      const detailByStage = {};
+      events.forEach((item) => { detailByStage[item.stage] = item.detail; });
+      if (task.stage) detailByStage[task.stage] = task.detail || detailByStage[task.stage];
+      return STAGES.map(([id, label]) => {
+        const did = reached.has(id) ? "did" : "";
+        const detail = detailByStage[id] && detailByStage[id] !== label ? `<small>${escapeHtml(detailByStage[id])}</small>` : "";
+        return `<div class="step ${did}"><i></i><span>${label}${detail}</span></div>`;
+      }).join("") + (task.error ? `<div class="step did"><i></i><span>失败<small>${escapeHtml(task.error)}</small></span></div>` : "");
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    function formatAudio(seconds) {
+      if (!Number.isFinite(seconds)) return "0:00";
+      const whole = Math.max(0, Math.floor(seconds));
+      const hours = Math.floor(whole / 3600);
+      const minutes = Math.floor((whole % 3600) / 60);
+      const secs = whole % 60;
+      if (hours) return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+      return `${minutes}:${String(secs).padStart(2, "0")}`;
+    }
+
+    function visualKey(task) {
+      return JSON.stringify([
+        task.id,
+        task.status,
+        task.stage,
+        task.detail,
+        task.title,
+        task.error,
+        task.output_path,
+        task.album,
+        task.url,
+        task.started_at,
+        task.finished_at,
+        task.created_at,
+        task.has_audio,
+        durationText(task),
+        (task.events || []).map((item) => `${item.stage}:${item.detail}`),
+      ]);
+    }
+
+    function sourceLink(url) {
+      const text = escapeHtml(url || "");
+      if (!/^https?:\/\//i.test(url || "")) return `<div class="meta">${text}</div>`;
+      return `<a class="source" href="${text}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    }
+
+    function ticketHtml(task) {
+      const open = openIds.has(task.id) ? "open" : "";
+      const title = task.title || task.url;
+      const path = task.output_path ? `<div class="meta">成品 ${escapeHtml(task.output_path)}</div>` : "";
+      const spent = durationText(task);
+      const timing = spent ? `<div class="meta">${escapeHtml(spent)}</div>` : "";
+      const player = task.has_audio ? `<div class="player" data-player="${task.id}">
+            <button type="button" class="play" aria-label="预听"><i></i></button>
+            <span class="time now">0:00</span>
+            <input class="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度" />
+            <span class="time end">预听</span>
+          </div>` : "";
+      return `<article class="ticket ${open}" data-id="${task.id}">
+          <header>
+            <div>
+              <div class="title">${escapeHtml(title)}</div>
+              <div class="meta">${escapeHtml(task.created_at || "")}${task.album ? ` · ${escapeHtml(task.album)}` : ""}</div>
+              ${timing}
+              ${sourceLink(task.url)}
+              ${path}
+            </div>
+            <div class="mark">
+              <span class="state ${escapeHtml(task.status)}">${STATUS[task.status] || escapeHtml(task.status)}</span>
+              ${task.status === "failed" || task.status === "stopped" ? `<button type="button" class="continue" data-retry="${task.id}">继续</button>` : ""}
+              ${task.status === "running" || task.status === "queued" ? `<button type="button" class="quiet" data-stop="${task.id}">停止</button>` : ""}
+              ${task.status === "running" ? "" : `<button type="button" class="quiet" data-delete="${task.id}">删除</button>`}
+            </div>
+          </header>
+          ${player}
+          <div class="timeline">${timeline(task)}</div>
+        </article>`;
+    }
+
+    function ensureAudio(id) {
+      const existing = audios.get(id);
+      if (existing) return existing;
+      const audio = new Audio(`/api/tasks/${id}/audio`);
+      audio.preload = "metadata";
+      const paint = () => paintPlayer(id);
+      ["timeupdate", "loadedmetadata", "durationchange", "play", "pause", "ended"].forEach((name) => {
+        audio.addEventListener(name, paint);
+      });
+      audios.set(id, audio);
+      return audio;
+    }
+
+    function paintPlayer(id) {
+      const player = list.querySelector(`[data-player="${id}"]`);
+      const audio = audios.get(id);
+      if (!player || !audio) return;
+      const play = player.querySelector(".play");
+      const scrub = player.querySelector(".scrub");
+      const paused = audio.paused;
+      play.classList.toggle("on", !paused);
+      play.setAttribute("aria-label", paused ? "预听" : "暂停");
+      player.querySelector(".now").textContent = formatAudio(audio.currentTime);
+      const duration = audio.duration;
+      player.querySelector(".end").textContent = Number.isFinite(duration) ? formatAudio(duration) : "预听";
+      if (document.activeElement !== scrub && Number.isFinite(duration) && duration > 0) {
+        scrub.value = String(Math.round((audio.currentTime / duration) * 1000));
+      }
+    }
+
+    function bindTicket(node) {
+      const player = node.querySelector("[data-player]");
+      if (player) {
+        const id = Number(player.dataset.player);
+        const audio = ensureAudio(id);
+        const play = player.querySelector(".play");
+        const scrub = player.querySelector(".scrub");
+        play.addEventListener("click", () => {
+          if (audio.paused) {
+            audios.forEach((other, otherId) => {
+              if (otherId !== id) other.pause();
+            });
+            audio.play().catch(() => {
+              const end = player.querySelector(".end");
+              if (end) end.textContent = "无法播放";
+            });
+          } else {
+            audio.pause();
+          }
+        });
+        scrub.addEventListener("input", () => {
+          if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+          audio.currentTime = (Number(scrub.value) / 1000) * audio.duration;
+          paintPlayer(id);
+        });
+        paintPlayer(id);
+      }
+      node.addEventListener("click", (event) => {
+        if (event.target.closest(".player, a")) return;
+        const retry = event.target.closest("[data-retry]");
+        const remove = event.target.closest("[data-delete]");
+        const stop = event.target.closest("[data-stop]");
+        if (stop) {
+          event.preventDefault();
+          stopTask(Number(stop.dataset.stop), stop);
+          return;
+        }
+        if (retry) {
+          event.preventDefault();
+          retryTask(Number(retry.dataset.retry), retry);
+          return;
+        }
+        if (remove) {
+          event.preventDefault();
+          deleteTask(Number(remove.dataset.delete));
+          return;
+        }
+        const id = Number(node.dataset.id);
+        if (openIds.has(id)) openIds.delete(id);
+        else openIds.add(id);
+        node.classList.toggle("open");
+      });
+    }
+
+    function render(tasks) {
+      if (!tasks.length) {
+        audios.forEach((audio) => audio.pause());
+        audios.clear();
+        list.innerHTML = '<div class="empty">还没有任务。贴上一条链接，开始做这一集。</div>';
+        return;
+      }
+      const ids = new Set(tasks.map((task) => task.id));
+      audios.forEach((audio, id) => {
+        if (!ids.has(id)) {
+          audio.pause();
+          audios.delete(id);
+        }
+      });
+      const nodes = new Map([...list.querySelectorAll(".ticket")].map((node) => [node.dataset.id, node]));
+      const fragment = document.createDocumentFragment();
+      tasks.forEach((task) => {
+        const key = visualKey(task);
+        const prev = nodes.get(String(task.id));
+        if (prev && prev.dataset.key === key) {
+          fragment.append(prev);
+          return;
+        }
+        const holder = document.createElement("template");
+        holder.innerHTML = ticketHtml(task).trim();
+        const node = holder.content.firstElementChild;
+        node.dataset.key = key;
+        bindTicket(node);
+        fragment.append(node);
+      });
+      list.replaceChildren(fragment);
+      audios.forEach((_audio, id) => paintPlayer(id));
+    }
+
+    async function stopTask(id, button) {
+      button.disabled = true;
+      errorBox.textContent = "";
+      try {
+        const response = await fetch(`/api/tasks/${id}/stop`, { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "无法停止");
+        await refresh();
+      } catch (err) {
+        errorBox.textContent = err.message;
+        button.disabled = false;
+      }
+    }
+
+    async function deleteTask(id) {
+      errorBox.textContent = "";
+      try {
+        const response = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "无法删除");
+        openIds.delete(id);
+        await refresh();
+      } catch (err) {
+        errorBox.textContent = err.message;
+      }
+    }
+
+    async function retryTask(id, button) {
+      button.disabled = true;
+      errorBox.textContent = "";
+      try {
+        const response = await fetch(`/api/tasks/${id}/retry`, { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "无法继续");
+        openIds.add(id);
+        await refresh();
+      } catch (err) {
+        errorBox.textContent = err.message;
+        button.disabled = false;
+      }
+    }
+
+    async function refresh() {
+      const data = await fetch("/api/tasks").then((r) => r.json());
+      render(data.tasks || []);
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorBox.textContent = "";
+      const button = document.getElementById("submit");
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+            urls: document.getElementById("urls").value,
+            output_dir: document.getElementById("output").value,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "提交失败");
+        document.getElementById("urls").value = "";
+        (data.tasks || []).forEach((task) => openIds.add(task.id));
+        await refresh();
+      } catch (err) {
+        errorBox.textContent = err.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    loadDefaults().catch(() => {});
+    refresh().catch((err) => { errorBox.textContent = err.message; });
+    setInterval(() => refresh().catch(() => {}), 1000);
+
+    const picker = document.getElementById("picker");
+    let pickerPath = "";
+
+    document.getElementById("choose-output").addEventListener("click", () => openPicker(document.getElementById("output").value));
+    document.getElementById("picker-up").addEventListener("click", () => openPicker(document.getElementById("picker-up").dataset.parent || ""));
+    document.getElementById("picker-use").addEventListener("click", () => {
+      document.getElementById("output").value = pickerPath;
+      picker.hidden = true;
+    });
+    picker.addEventListener("click", (event) => {
+      if (event.target === picker) picker.hidden = true;
+    });
+
+    async function openPicker(path) {
+      const response = await fetch("/api/dirs?path=" + encodeURIComponent(path || ""));
+      const data = await response.json();
+      if (!response.ok) {
+        errorBox.textContent = data.detail || "打不开目录";
+        return;
+      }
+      pickerPath = data.path;
+      document.getElementById("picker-path").textContent = data.path;
+      const up = document.getElementById("picker-up");
+      up.hidden = !data.parent;
+      up.dataset.parent = data.parent || "";
+      document.getElementById("picker-list").innerHTML = (data.dirs || []).map((name) =>
+        `<button type="button" class="dir" data-dir="${escapeHtml(name)}">${escapeHtml(name)}</button>`
+      ).join("") || "<p class='hint'>这里没有子文件夹</p>";
+      document.getElementById("picker-list").querySelectorAll("[data-dir]").forEach((node) => {
+        node.addEventListener("click", () => openPicker(`${data.path}/${node.dataset.dir}`));
+      });
+      picker.hidden = false;
+    }
+  </script>
+</body>
+</html>

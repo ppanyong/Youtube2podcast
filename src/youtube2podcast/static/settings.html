@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>配置 · 成长书房</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root { --ink:#1c140e; --paper:#f6efe2; --copper:#c4622d; --moss:#2f5d45; --fail:#8d2f2a; --line:rgba(28,20,14,.14); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--paper);
+      font-family: "Noto Serif SC", "Songti SC", serif;
+      background:
+        radial-gradient(900px 420px at 8% -8%, rgba(232, 176, 122, 0.22), transparent 58%),
+        linear-gradient(180deg, #3a2618 0%, #24170f 28%, #140d09 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.22;
+      background-image: radial-gradient(rgba(246, 239, 226, 0.4) 0.55px, transparent 0.55px);
+      background-size: 3px 3px;
+    }
+    .wrap { position: relative; max-width: 640px; margin: 0 auto; padding: 36px 20px 72px; }
+    a.back {
+      color: #e7c2a4;
+      text-decoration: none;
+      letter-spacing: .2em;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(231, 194, 164, 0.45);
+    }
+    a.back:hover { color: var(--paper); }
+    h1 { font-family: Fraunces, "Noto Serif SC", serif; font-weight: 520; font-size: 42px; margin: 14px 0 8px; }
+    .card {
+      background:
+        linear-gradient(180deg, rgba(255, 252, 246, 0.72), rgba(255, 252, 246, 0) 22%),
+        var(--paper);
+      color: var(--ink);
+      padding: 22px;
+      border: 1px solid rgba(255, 236, 214, 0.28);
+      border-radius: 4px 18px 6px 14px;
+      box-shadow: inset 0 1px 0 rgba(255, 250, 242, 0.85), 0 22px 48px rgba(0, 0, 0, 0.32);
+    }
+    label { display: block; margin: 14px 0 6px; color: #8a6d55; font-size: 12px; letter-spacing: .16em; }
+    input, select {
+      width: 100%; border: none; border-bottom: 1px solid var(--line);
+      background: transparent; font: inherit; color: inherit; padding: 8px 0;
+    }
+    input:focus, select:focus { outline: none; border-bottom-color: var(--copper); }
+    h2 { font-family: Fraunces, "Noto Serif SC", serif; font-size: 20px; font-weight: 520; margin: 26px 0 0; }
+    button {
+      margin-top: 18px; width: 100%; border: none; border-radius: 2px;
+      background: linear-gradient(180deg, #2c1d14, #120c09); color: var(--paper);
+      font: inherit; letter-spacing: .18em; padding: 13px 14px; cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 214, 176, 0.18);
+    }
+    #save-settings:hover { background: #100b08; }
+    button.choose { width: auto; margin: 0 0 6px; padding: 6px 10px; background: transparent; color: var(--ink); border: 1px solid var(--line); letter-spacing: .08em; }
+    .picker-row { display: flex; align-items: flex-end; gap: 10px; }
+    .picker-row input { flex: 1; }
+    .hint, .error, .ok { font-size: 13px; min-height: 1.2em; }
+    .hint { color: #6d5846; }
+    footer.copy { margin-top: 28px; color: #cbb9a4; font-size: 13px; }
+    .error { color: var(--fail); }
+    .ok { color: var(--moss); }
+    .sheet { position: fixed; inset: 0; background: rgba(28,20,14,.45); display: grid; place-items: center; }
+    .sheet[hidden] { display: none; }
+    .sheet .panel { width: min(480px, calc(100% - 32px)); max-height: 70vh; overflow: auto; background: var(--paper); color: var(--ink); padding: 20px; }
+    .sheet button.dir { width: 100%; margin: 0; padding: 8px 0; text-align: left; background: transparent; color: var(--ink); letter-spacing: 0; border-bottom: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">返回成长书房</a>
+    <h1>配置</h1>
+    <form class="card" id="settings">
+      <h2>大模型</h2>
+      <label for="llm-base">接口地址</label>
+      <input id="llm-base" required />
+      <label for="llm-key">密钥</label>
+      <input id="llm-key" type="password" autocomplete="off" />
+      <label for="llm-model">模型</label>
+      <input id="llm-model" required />
+      <h2>语音</h2>
+      <label for="tts-base">接口地址</label>
+      <input id="tts-base" required />
+      <label for="tts-key">密钥</label>
+      <input id="tts-key" type="password" autocomplete="off" />
+      <label for="tts-model">模型</label>
+      <input id="tts-model" required />
+      <label for="tts-voice-pick">人声</label>
+      <select id="tts-voice-pick"></select>
+      <input id="tts-voice" />
+      <p class="hint" id="voice-note"></p>
+      <label for="tts-speed">语速</label>
+      <input id="tts-speed" type="number" min="0.25" max="4" step="any" value="1" required />
+      <h2>默认成品目录</h2>
+      <div class="picker-row">
+        <input id="default-output" readonly placeholder="选择一个目录" />
+        <button type="button" class="choose" id="choose-output">选择</button>
+      </div>
+      <p class="error" id="settings-error"></p>
+      <p class="ok" id="settings-ok"></p>
+      <button type="submit" id="save-settings">保存并生效</button>
+      <p class="hint">人声列表跟着硅基流动走。列不出来或选中的音色不可用时，会退回已保存的音色，任务照常继续。专辑名由每条视频的标题决定。</p>
+    </form>
+    <footer class="copy">Copyright © 2026 成长书房 · MIT License</footer>
+  </div>
+  <div class="sheet" id="picker" hidden>
+    <div class="panel">
+      <p id="picker-path"></p>
+      <div id="picker-list"></div>
+      <button type="button" class="choose" id="picker-up">上一级</button>
+      <button type="button" id="picker-use">使用这个目录</button>
+    </div>
+  </div>
+  <script>
+    const form = document.getElementById("settings");
+    const error = document.getElementById("settings-error");
+    const ok = document.getElementById("settings-ok");
+    const voicePick = document.getElementById("tts-voice-pick");
+    const voiceInput = document.getElementById("tts-voice");
+
+    function fill(data) {
+      document.getElementById("llm-base").value = data.llm_base_url || "";
+      document.getElementById("llm-model").value = data.llm_model || "";
+      document.getElementById("tts-base").value = data.tts_base_url || "";
+      document.getElementById("tts-model").value = data.tts_model || "";
+      voiceInput.value = data.tts_voice || "";
+      document.getElementById("tts-speed").value = data.tts_speed || 1;
+      document.getElementById("default-output").value = data.output_dir || "";
+      document.getElementById("llm-key").value = "";
+      document.getElementById("tts-key").value = "";
+      document.getElementById("llm-key").placeholder = data.llm_api_key_set ? `已保存 ${data.llm_api_key_hint}，留空则保持` : "密钥";
+      document.getElementById("tts-key").placeholder = data.tts_api_key_set ? `已保存 ${data.tts_api_key_hint}，留空则保持` : "密钥";
+    }
+
+    async function loadVoices(current) {
+      const note = document.getElementById("voice-note");
+      try {
+        const response = await fetch("/api/voices");
+        const data = await response.json();
+        const voices = data.voices || [];
+        if (!voices.length) {
+          voicePick.hidden = true;
+          note.textContent = "没有取到可选人声，会使用下面填写的音色。";
+          return;
+        }
+        voicePick.hidden = false;
+        const options = voices.map((item) => `<option value="${item.id.replaceAll('"', "&quot;")}">${item.label}</option>`);
+        options.push('<option value="">自己填写</option>');
+        voicePick.innerHTML = options.join("");
+        const match = voices.some((item) => item.id === current);
+        voicePick.value = match ? current : "";
+        voiceInput.hidden = match;
+        note.textContent = "可选人声来自硅基流动。选不了时，这里的填写仍然生效。";
+      } catch (err) {
+        voicePick.hidden = true;
+        note.textContent = "人声列表没有加载，不影响使用已保存的音色。";
+      }
+    }
+
+    voicePick.addEventListener("change", () => {
+      if (voicePick.value) {
+        voiceInput.value = voicePick.value;
+        voiceInput.hidden = true;
+      } else {
+        voiceInput.hidden = false;
+      }
+    });
+
+    fetch("/api/settings").then((r) => r.json()).then(async (data) => {
+      fill(data);
+      await loadVoices(data.tts_voice || "");
+    }).catch((err) => { error.textContent = err.message; });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      error.textContent = "";
+      ok.textContent = "";
+      const button = document.getElementById("save-settings");
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            llm_base_url: document.getElementById("llm-base").value,
+            llm_api_key: document.getElementById("llm-key").value,
+            llm_model: document.getElementById("llm-model").value,
+            tts_base_url: document.getElementById("tts-base").value,
+            tts_api_key: document.getElementById("tts-key").value,
+            tts_model: document.getElementById("tts-model").value,
+            tts_voice: voiceInput.value,
+            tts_speed: Number(document.getElementById("tts-speed").value),
+            output_dir: document.getElementById("default-output").value,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "保存失败");
+        fill(data);
+        await loadVoices(data.tts_voice || "");
+        ok.textContent = "已保存，下一条任务会使用这套配置。";
+      } catch (err) {
+        error.textContent = err.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    const picker = document.getElementById("picker");
+    let pickerPath = "";
+    document.getElementById("choose-output").addEventListener("click", () => openPicker(document.getElementById("default-output").value));
+    document.getElementById("picker-up").addEventListener("click", () => openPicker(document.getElementById("picker-up").dataset.parent || ""));
+    document.getElementById("picker-use").addEventListener("click", () => {
+      document.getElementById("default-output").value = pickerPath;
+      picker.hidden = true;
+    });
+    picker.addEventListener("click", (event) => { if (event.target === picker) picker.hidden = true; });
+
+    async function openPicker(path) {
+      const response = await fetch("/api/dirs?path=" + encodeURIComponent(path || ""));
+      const data = await response.json();
+      if (!response.ok) { error.textContent = data.detail || "打不开目录"; return; }
+      pickerPath = data.path;
+      document.getElementById("picker-path").textContent = data.path;
+      const up = document.getElementById("picker-up");
+      up.hidden = !data.parent;
+      up.dataset.parent = data.parent || "";
+      document.getElementById("picker-list").innerHTML = (data.dirs || []).map((name) =>
+        `<button type="button" class="dir" data-dir="${name.replaceAll('"', "&quot;")}">${name}</button>`
+      ).join("") || "<p class='hint'>这里没有子文件夹</p>";
+      document.getElementById("picker-list").querySelectorAll("[data-dir]").forEach((node) => {
+        node.addEventListener("click", () => openPicker(`${data.path}/${node.dataset.dir}`));
+      });
+      picker.hidden = false;
+    }
+  </script>
+</body>
+</html>
