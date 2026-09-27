@@ -79,6 +79,9 @@ class Pipeline:
         if checkpoint.get("resume_stage") == "summarizing" and checkpoint.get("lines"):
             self._resume_summary(task, checkpoint)
             return
+        if checkpoint.get("resume_stage") == "translating" and checkpoint.get("source_sentences"):
+            self._resume_translation(task, checkpoint)
+            return
 
         known = extract_video_id(task["url"])
         if known and self._already_done(known, task_id):
@@ -105,24 +108,81 @@ class Pipeline:
                 self._skip(task_id, "没有可用的英文字幕", video_id=media.video_id, title=media.title)
                 return
             task = self._named_album(task, media.title)
-
-            def on_batch(index: int, total: int) -> None:
-                self._check()
-                self.store.update(task_id, stage="translating", detail=f"翻译 {index}/{total}")
-
             self.store.update(task_id, stage="translating", detail="翻译")
-            translated = self.translator.translate([item.text for item in sentences], on_batch=on_batch)
-            if len(translated) != len(sentences):
-                raise RuntimeError("翻译结果数量与原文不一致")
-            lines = polish_translated([(item.start, text) for item, text in zip(sentences, translated)])
-            if not lines:
-                raise RuntimeError("去重后没有可朗读的译文")
-            translated = [text for _start, text in lines]
-            checkpoint = _checkpoint(media, lines, translated, summary=None, folder=None, thumbnail=None)
-            checkpoint["resume_stage"] = "summarizing"
-            self.store.update(task_id, checkpoint=checkpoint, stage="summarizing", detail="写小结")
-            summary = self.summarizer.summarize(media.title, lines)
-            self._publish(task, media, summary, lines, translated, work)
+            translated = self._translate(task_id, media, sentences)
+            self._finish_translation(task, media, sentences, translated, work)
+
+    def _resume_translation(self, task: dict, checkpoint: dict) -> None:
+        task = self._named_album(task, checkpoint.get("original_title") or "")
+        task_id = task["id"]
+        sources = checkpoint.get("source_sentences") or []
+        done = list(checkpoint.get("translated_partial") or [])
+        if len(done) > len(sources):
+            done = done[: len(sources)]
+        self.store.update(task_id, status="running", stage="translating", detail="从翻译继续", error=None)
+        media = _media_from_checkpoint(checkpoint)
+        sentences = [_StoredSentence(float(item.get("start") or 0), str(item.get("text") or "")) for item in sources]
+        remaining = [item.text for item in sentences[len(done) :]]
+        previous = ""
+        for text in reversed(done):
+            if text and text != "[重复]":
+                previous = text
+                break
+
+        def on_partial(piece: list[str]) -> None:
+            merged = done + piece
+            self._store_translation(task_id, media, sentences, merged, detail=f"翻译 {len(merged)}/{len(sentences)}")
+
+        more = self.translator.translate(remaining, on_batch=self._batch_progress(task_id, len(done), len(sentences)), on_partial=on_partial, previous=previous)
+        translated = done + more
+        if len(translated) != len(sentences):
+            raise RuntimeError("翻译结果数量与原文不一致")
+        with tempfile.TemporaryDirectory(prefix="youtube2podcast-") as tmp:
+            self._finish_translation(task, media, sentences, translated, Path(tmp))
+
+    def _translate(self, task_id: int, media: Media, sentences) -> list[str]:
+        def on_partial(piece: list[str]) -> None:
+            self._store_translation(task_id, media, sentences, piece, detail=f"翻译 {len(piece)}/{len(sentences)}")
+
+        translated = self.translator.translate(
+            [item.text for item in sentences],
+            on_batch=self._batch_progress(task_id, 0, len(sentences)),
+            on_partial=on_partial,
+        )
+        if len(translated) != len(sentences):
+            raise RuntimeError("翻译结果数量与原文不一致")
+        return translated
+
+    def _batch_progress(self, task_id: int, done: int, total_sentences: int):
+        batch_size = max(1, getattr(self.translator, "batch_size", 12))
+        finished = done // batch_size
+        total = max(1, (total_sentences + batch_size - 1) // batch_size)
+
+        def on_batch(index: int, _batch_total: int) -> None:
+            self._check()
+            current = min(total, finished + index)
+            self.store.update(task_id, stage="translating", detail=f"翻译 {current}/{total}")
+
+        return on_batch
+
+    def _store_translation(self, task_id: int, media: Media, sentences, partial: list[str], *, detail: str) -> None:
+        checkpoint = _checkpoint(media, [], [], None, None, getattr(media, "thumbnail_path", None))
+        checkpoint["resume_stage"] = "translating"
+        checkpoint["source_sentences"] = [{"start": item.start, "text": item.text} for item in sentences]
+        checkpoint["translated_partial"] = partial
+        self.store.update(task_id, checkpoint=checkpoint, stage="translating", detail=detail)
+
+    def _finish_translation(self, task: dict, media: Media, sentences, translated: list[str], work: Path) -> None:
+        task_id = task["id"]
+        lines = polish_translated([(item.start, text) for item, text in zip(sentences, translated)])
+        if not lines:
+            raise RuntimeError("去重后没有可朗读的译文")
+        spoken = [text for _start, text in lines]
+        checkpoint = _checkpoint(media, lines, spoken, summary=None, folder=None, thumbnail=getattr(media, "thumbnail_path", None))
+        checkpoint["resume_stage"] = "summarizing"
+        self.store.update(task_id, checkpoint=checkpoint, stage="summarizing", detail="写小结")
+        summary = self.summarizer.summarize(media.title, lines)
+        self._publish(task, media, summary, lines, spoken, work)
 
     def _resume_summary(self, task: dict, checkpoint: dict) -> None:
         task = self._named_album(task, checkpoint.get("original_title") or "")
@@ -288,6 +348,12 @@ class Pipeline:
         if title:
             fields["title"] = title
         self.store.update(task_id, **fields)
+
+
+class _StoredSentence:
+    def __init__(self, start: float, text: str) -> None:
+        self.start = start
+        self.text = text
 
 
 def _upload_day(raw: str | None) -> str:

@@ -55,16 +55,19 @@ def parse_summary(content: str, fallback_title: str, lines: list[tuple[float, st
         if start < 0 or end < start:
             raise ValueError("没有 JSON")
         data = json.loads(content[start : end + 1])
+        if not isinstance(data, dict):
+            raise ValueError("小结不是对象")
         title = str(data.get("title") or "").strip() or fallback_title
         intro = str(data.get("intro") or "").strip()
         points = []
         for item in data.get("points") or []:
-            text = str(item.get("text") or "").strip()
-            if not text:
-                continue
-            points.append(KeyPoint(timestamp=max(0.0, _as_seconds(item.get("t", 0))), text=text))
+            point = _point_from(item)
+            if point is not None:
+                points.append(point)
         terms = []
         for item in data.get("terms") or []:
+            if not isinstance(item, dict):
+                continue
             source = str(item.get("en") or item.get("source") or "").strip()
             zh = str(item.get("zh") or "").strip()
             if source and zh:
@@ -74,13 +77,29 @@ def parse_summary(content: str, fallback_title: str, lines: list[tuple[float, st
         if not points:
             points = _fallback_points(lines)
         return Summary(title=title, intro=intro, points=points[:12], terms=terms[:20])
-    except (ValueError, TypeError, json.JSONDecodeError, KeyError):
+    except (ValueError, TypeError, json.JSONDecodeError, KeyError, AttributeError):
         return Summary(
             title=fallback_title or "学习笔记",
             intro=_fallback_intro(lines),
             points=_fallback_points(lines),
             terms=[],
         )
+
+
+def _point_from(item) -> KeyPoint | None:
+    if isinstance(item, str):
+        text = item.strip()
+        return KeyPoint(timestamp=0.0, text=text) if text else None
+    if not isinstance(item, dict):
+        return None
+    text = str(item.get("text") or item.get("point") or "").strip()
+    if not text:
+        return None
+    try:
+        timestamp = max(0.0, _as_seconds(item.get("t", item.get("timestamp", 0))))
+    except (TypeError, ValueError):
+        timestamp = 0.0
+    return KeyPoint(timestamp=timestamp, text=text)
 
 
 def _fallback_intro(lines: list[tuple[float, str]]) -> str:
