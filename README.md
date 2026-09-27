@@ -6,6 +6,10 @@
 
 解决三个问题 第一，把长视频变成一条音频 MP3，通勤路上反复听； 第二，直接把英文转成中文语音朗读，解决听力障碍； 第三，音频文件随时可以分享。
 
+[![Watch the video](https://img.youtube.com/vi/BDxGFAroPsQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=BDxGFAroPsQ)
+
+
+
 ## 安装
 
 需要 Python 3.12 和本机的 `ffmpeg`。
@@ -35,7 +39,6 @@ Windows 上把 `source .venv/bin/activate` 换成 `.venv\Scripts\activate`。
 git status
 ```
 
-列表里不应出现 `.env` 或 `data/`。
 
 ## 成品
 
