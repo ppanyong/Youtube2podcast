@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
+from youtube2podcast.llm import ContentBlocked
 from youtube2podcast.subtitles import collapse_echo, is_near_duplicate
 
 _NUM_RE = re.compile(r"^\s*[\[\(]?(\d+)[\]\)\.\:、]\s*(.*)$")
@@ -57,6 +58,7 @@ class LLMTranslator:
         self,
         sentences: list[str],
         on_batch: Callable[[int, int], None] | None = None,
+        on_partial: Callable[[list[str]], None] | None = None,
         *,
         previous: str = "",
     ) -> list[str]:
@@ -71,6 +73,8 @@ class LLMTranslator:
                 on_batch(index, total)
             piece = self._translate_batch(batch, previous=carry)
             translated.extend(piece)
+            if on_partial:
+                on_partial(list(translated))
             for item in reversed(piece):
                 if item and not is_skip_marker(item):
                     carry = item
@@ -91,7 +95,19 @@ class LLMTranslator:
         )
         context = f"上一句中文（供连贯，勿再复述）：{previous}\n\n" if previous else ""
         user = f"{context}共 {len(segments)} 句：\n{numbered}"
-        content = self.complete(system, user)
+        try:
+            content = self.complete(system, user)
+        except ContentBlocked:
+            if len(segments) == 1:
+                return ["[重复]"]
+            mid = max(1, len(segments) // 2)
+            left = self._translate_batch(segments[:mid], previous=previous)
+            carry = previous
+            for item in reversed(left):
+                if item and not is_skip_marker(item):
+                    carry = item
+                    break
+            return left + self._translate_batch(segments[mid:], previous=carry)
         aligned = align_numbered(content, segments)
         cleaned: list[str] = []
         last = previous

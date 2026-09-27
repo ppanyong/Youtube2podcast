@@ -7,6 +7,10 @@ import httpx
 from youtube2podcast.cancel import TaskCancelled, active_cancel
 
 
+class ContentBlocked(RuntimeError):
+    """模型拒绝写出这一段，通常是内容被判为敏感。"""
+
+
 def build_complete(base_url: str, api_key: str, model: str, *, temperature: float = 0) -> Callable[[str, str], str]:
     """返回一个调用 OpenAI 兼容聊天接口的函数。"""
     if not api_key or api_key.startswith("sk-xxxx"):
@@ -49,8 +53,45 @@ def build_complete(base_url: str, api_key: str, model: str, *, temperature: floa
         if response.status_code in {401, 403}:
             raise RuntimeError(f"大模型 API Key 无效：{response.text[:200]}")
         if response.status_code >= 400:
-            raise RuntimeError(f"大模型返回错误 {response.status_code}：{response.text[:200]}")
-        data = response.json()
-        return ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            body = response.text[:500]
+            if response.status_code == 422 and ("sensitive" in body.lower() or "1027" in body):
+                raise ContentBlocked("模型拒绝写出这一段，内容被判为敏感")
+            raise RuntimeError(f"大模型返回错误 {response.status_code}：{body[:200]}")
+        return chat_text(response.json())
 
     return complete
+
+
+def chat_text(data) -> str:
+    """从不同厂商的聊天响应里取出正文。取不到时返回空字符串，由调用方决定如何回退。"""
+    if not isinstance(data, dict):
+        return data if isinstance(data, str) else ""
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        for key in ("content", "text", "reply"):
+            value = data.get(key)
+            if isinstance(value, str):
+                return value
+        return ""
+    choice = choices[0]
+    if isinstance(choice, str):
+        return choice
+    if not isinstance(choice, dict):
+        return ""
+    message = choice.get("message")
+    if isinstance(message, str):
+        return message
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict):
+                    parts.append(str(part.get("text") or part.get("content") or ""))
+            return "".join(parts)
+    text = choice.get("text")
+    return text if isinstance(text, str) else ""
