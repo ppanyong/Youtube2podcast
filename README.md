@@ -31,14 +31,6 @@ youtube2podcast serve
 
 Windows 上把 `source .venv/bin/activate` 换成 `.venv\Scripts\activate`。
 
-## 密钥不会进仓库
-
-`.env`、任务数据库 `data/` 已写入 `.gitignore`。仓库里只有 `.env.example`，里面是占位符。发布或推送前可以确认：
-
-```bash
-git status
-```
-
 
 ## 成品
 
