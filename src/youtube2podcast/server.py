@@ -129,6 +129,7 @@ class SettingsBody(BaseModel):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
+    tts_provider: str = "siliconflow"
     tts_base_url: str = ""
     tts_api_key: str = ""
     tts_model: str = ""
@@ -172,10 +173,14 @@ def create_app(store: TaskStore, runner: JobRunner, defaults: dict | None = None
         return _list_dirs(path)
 
     @app.get("/api/voices")
-    def voices() -> dict:
+    def voices(provider: str = "") -> dict:
         if settings_store is None:
             return {"available": False, "voices": []}
         current = settings_store.settings
+        chosen = (provider or current.tts_provider or "siliconflow").strip().lower()
+        if chosen in {"edge", "edge-tts", "microsoft"}:
+            choices = voice_choices(current.tts_model, provider="edge")
+            return {"available": bool(choices), "voices": choices, "provider": "edge"}
         custom: list[dict] = []
         available = "cosyvoice2" in current.tts_model.lower()
         if current.tts_api_key and current.tts_base_url:
@@ -196,8 +201,8 @@ def create_app(store: TaskStore, runner: JobRunner, defaults: dict | None = None
                     available = True
             except Exception:
                 logger.info("音色列表没有取到，沿用已保存的音色")
-        choices = voice_choices(current.tts_model, custom)
-        return {"available": bool(choices) or available, "voices": choices}
+        choices = voice_choices(current.tts_model, custom, provider="siliconflow")
+        return {"available": bool(choices) or available, "voices": choices, "provider": "siliconflow"}
 
     @app.get("/api/config")
     def config() -> dict:

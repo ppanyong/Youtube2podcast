@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import subprocess
@@ -8,8 +9,13 @@ from pathlib import Path
 
 import httpx
 
-from youtube2podcast.cancel import TaskCancelled, active_cancel, run_process
+from youtube2podcast.cancel import TaskCancelled, active_cancel, run_http, run_process
 from youtube2podcast.voices import fallback_voice
+
+try:
+    import edge_tts
+except ImportError:  # pragma: no cover - 依赖装好后就不会走到
+    edge_tts = None
 
 
 class SpeechError(RuntimeError):
@@ -42,6 +48,41 @@ def chunk_for_speech(sentences: list[str], max_chars: int = 300) -> list[str]:
         last = text
     if buf:
         chunks.append("".join(buf))
+    return chunks
+
+
+def chunk_spoken(items: list[tuple[str, str]], max_chars: int = 300) -> list[tuple[str, str]]:
+    """同一说话人的句子才拼进一段，换人就切开。"""
+    from youtube2podcast.subtitles import collapse_echo, is_near_duplicate
+    from youtube2podcast.translate import is_skip_marker
+
+    chunks: list[tuple[str, str]] = []
+    buf: list[str] = []
+    voice = ""
+    size = 0
+    last = ""
+
+    def flush() -> None:
+        nonlocal buf, size, last
+        if buf:
+            chunks.append(("".join(buf), voice))
+        buf = []
+        size = 0
+
+    for sentence, current in items:
+        text = collapse_echo((sentence or "").strip())
+        if not text or is_skip_marker(text):
+            continue
+        if last and is_near_duplicate(last, text):
+            continue
+        if buf and (current != voice or size + len(text) > max_chars):
+            flush()
+        if not buf:
+            voice = current
+        buf.append(text if text.endswith(("。", "！", "？", ".", "!", "?")) else text + "。")
+        size += len(text)
+        last = text
+    flush()
     return chunks
 
 
@@ -198,6 +239,7 @@ class HttpSpeaker:
         self.speed = speed
         self.max_chars = max_chars
         self.timeout = timeout
+        self._voice_alias: dict[str, str] = {}
 
     def speak(
         self,
@@ -205,34 +247,45 @@ class HttpSpeaker:
         dest: Path,
         on_chunk: Callable[[int, int], None] | None = None,
         should_stop: Callable[[], None] | None = None,
+        voices: list[str] | None = None,
     ) -> None:
         if not self.api_key:
             raise SpeechError("未配置 TTS_API_KEY")
-        chunks = chunk_for_speech(sentences, self.max_chars)
+        voices = list(voices or [])
+        if voices and len(voices) == len(sentences):
+            chunks = chunk_spoken(list(zip(sentences, voices)), self.max_chars)
+        else:
+            chunks = [(text, self.voice) for text in chunk_for_speech(sentences, self.max_chars)]
         if not chunks:
             raise SpeechError("没有可朗读的中文文本")
         work = dest.parent / f".tts-{dest.stem}"
         work.mkdir(parents=True, exist_ok=True)
         parts: list[Path] = []
         total = len(chunks)
+        timeout = httpx.Timeout(connect=15.0, read=float(self.timeout), write=30.0, pool=15.0)
+        self._voice_alias: dict[str, str] = {}
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            with httpx.Client(timeout=timeout) as client:
                 cancel = active_cancel.get()
                 if cancel is not None and hasattr(cancel, "track_client"):
                     cancel.track_client(client)
                 try:
-                    for index, text in enumerate(chunks, start=1):
+                    for index, (text, voice) in enumerate(chunks, start=1):
                         if should_stop:
                             should_stop()
+                        if cancel is not None and cancel.is_set():
+                            raise TaskCancelled()
                         part = work / f"{index:03d}.mp3"
                         if not (part.exists() and part.stat().st_size > 100):
-                            part.write_bytes(self._audio(client, text))
+                            part.write_bytes(self._audio(client, text, voice=voice))
                         if on_chunk:
                             on_chunk(index, total)
                         parts.append(part)
                 finally:
                     if cancel is not None and hasattr(cancel, "untrack_client"):
                         cancel.untrack_client(client)
+            if active_cancel.get() is not None and active_cancel.get().is_set():
+                raise TaskCancelled()
             concat_to_mp3(parts, dest)
         except TaskCancelled:
             raise
@@ -241,28 +294,39 @@ class HttpSpeaker:
         else:
             shutil.rmtree(work, ignore_errors=True)
 
-    def _audio(self, client: httpx.Client, text: str) -> bytes:
+    def _audio(self, client: httpx.Client, text: str, *, voice: str | None = None) -> bytes:
+        chosen = voice or self.voice
+        chosen = self._voice_alias.get(chosen, chosen)
         try:
-            return self._request(client, text, self.voice)
+            return self._request(client, text, chosen)
         except SpeechError as exc:
-            fallback = fallback_voice(self.model, self.voice)
+            fallback = fallback_voice(self.model, chosen)
             if exc.status != 400 or not fallback:
                 raise
-            return self._request(client, text, fallback)
+            audio = self._request(client, text, fallback)
+            original = voice or self.voice
+            self._voice_alias[original] = fallback
+            self._voice_alias[chosen] = fallback
+            return audio
 
     def _request(self, client: httpx.Client, text: str, voice: str) -> bytes:
         try:
-            response = client.post(
-                speech_endpoint(self.base_url),
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model,
-                    "input": text,
-                    "voice": voice,
-                    "response_format": "mp3",
-                    "speed": self.speed,
-                },
+            response = run_http(
+                client,
+                lambda: client.post(
+                    speech_endpoint(self.base_url),
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={
+                        "model": self.model,
+                        "input": text,
+                        "voice": voice,
+                        "response_format": "mp3",
+                        "speed": self.speed,
+                    },
+                ),
             )
+        except TaskCancelled:
+            raise
         except httpx.HTTPError as exc:
             if active_cancel.get() is not None and active_cancel.get().is_set():
                 raise TaskCancelled() from exc
@@ -273,10 +337,92 @@ class HttpSpeaker:
 
         def fetch_url(url: str) -> bytes:
             try:
-                downloaded = client.get(url)
+                downloaded = run_http(client, lambda: client.get(url))
                 downloaded.raise_for_status()
+            except TaskCancelled:
+                raise
             except httpx.HTTPError as exc:
+                if active_cancel.get() is not None and active_cancel.get().is_set():
+                    raise TaskCancelled() from exc
                 raise SpeechError(f"无法下载语音文件：{exc}") from exc
             return downloaded.content
 
         return parse_tts_body(response.headers.get("content-type", ""), response.content, fetch_url)
+
+
+def edge_rate(speed: float) -> str:
+    """把 1.0 语速转成 Edge TTS 的 +0% 写法。"""
+    try:
+        value = float(speed)
+    except (TypeError, ValueError):
+        value = 1.0
+    percent = int(round((value - 1.0) * 100))
+    return f"{percent:+d}%"
+
+
+class EdgeSpeaker:
+    """微软 Edge 在线朗读。不需要 API Key。"""
+
+    def __init__(self, *, voice: str, speed: float = 1.0, max_chars: int = 300) -> None:
+        self.model = "edge"
+        self.voice = voice or "zh-CN-XiaoxiaoNeural"
+        self.speed = speed
+        self.max_chars = max_chars
+        self.api_key = ""
+        self.provider = "edge"
+
+    def speak(
+        self,
+        sentences: list[str],
+        dest: Path,
+        on_chunk: Callable[[int, int], None] | None = None,
+        should_stop: Callable[[], None] | None = None,
+        voices: list[str] | None = None,
+    ) -> None:
+        if edge_tts is None:
+            raise SpeechError("未安装 edge-tts，请先 pip install edge-tts")
+        voices = list(voices or [])
+        if voices and len(voices) == len(sentences):
+            chunks = chunk_spoken(list(zip(sentences, voices)), self.max_chars)
+        else:
+            chunks = [(text, self.voice) for text in chunk_for_speech(sentences, self.max_chars)]
+        if not chunks:
+            raise SpeechError("没有可朗读的中文文本")
+        work = dest.parent / f".tts-{dest.stem}"
+        work.mkdir(parents=True, exist_ok=True)
+        parts: list[Path] = []
+        total = len(chunks)
+        rate = edge_rate(self.speed)
+        try:
+            for index, (text, voice) in enumerate(chunks, start=1):
+                if should_stop:
+                    should_stop()
+                if active_cancel.get() is not None and active_cancel.get().is_set():
+                    raise TaskCancelled()
+                part = work / f"{index:03d}.mp3"
+                if not (part.exists() and part.stat().st_size > 100):
+                    self._synthesize(text, voice or self.voice, part, rate)
+                if on_chunk:
+                    on_chunk(index, total)
+                parts.append(part)
+            if active_cancel.get() is not None and active_cancel.get().is_set():
+                raise TaskCancelled()
+            concat_to_mp3(parts, dest)
+        except TaskCancelled:
+            raise
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def _synthesize(self, text: str, voice: str, dest: Path, rate: str) -> None:
+        async def run() -> None:
+            communicate = edge_tts.Communicate(text, voice, rate=rate)
+            await communicate.save(str(dest))
+
+        try:
+            asyncio.run(run())
+        except TaskCancelled:
+            raise
+        except Exception as exc:
+            if active_cancel.get() is not None and active_cancel.get().is_set():
+                raise TaskCancelled() from exc
+            raise SpeechError(f"Edge TTS 合成失败：{exc}") from exc

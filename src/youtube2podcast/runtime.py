@@ -10,24 +10,31 @@ from youtube2podcast.pipeline import Pipeline
 from youtube2podcast.summarize import LLMSummarizer
 from youtube2podcast.tasks import TaskStore
 from youtube2podcast.translate import LLMTranslator
-from youtube2podcast.tts import HttpSpeaker
+from youtube2podcast.tts import EdgeSpeaker, HttpSpeaker
 
 
-def build_pipeline(settings: Settings, store: TaskStore) -> Pipeline:
-    complete = build_complete(settings.llm_base_url, settings.llm_api_key, settings.llm_model)
-    speaker = HttpSpeaker(
+def build_speaker(settings: Settings):
+    if settings.tts_provider == "edge":
+        return EdgeSpeaker(voice=settings.tts_voice, speed=settings.tts_speed)
+    return HttpSpeaker(
         base_url=settings.tts_base_url,
         api_key=settings.tts_api_key,
         model=settings.tts_model,
         voice=settings.tts_voice,
         speed=settings.tts_speed,
     )
+
+
+def build_pipeline(settings: Settings, store: TaskStore) -> Pipeline:
+    complete = build_complete(settings.llm_base_url, settings.llm_api_key, settings.llm_model)
     return Pipeline(
         store,
         YtDlpDownloader(),
         LLMTranslator(complete),
         LLMSummarizer(complete),
-        speaker,
+        build_speaker(settings),
+        complete=complete,
+        tts_provider=settings.tts_provider,
     )
 
 

@@ -27,6 +27,7 @@ class Sentence:
     text: str
     start: float
     end: float
+    speaker: str | None = None
 
 
 def _seconds(hours: str | None, minutes: str, secs: str, millis: str) -> float:
@@ -178,7 +179,7 @@ def merge_cues(
         if text:
             start = buf[0].start
             end = buf[-1].start + buf[-1].duration
-            sentences.append(Sentence(text=text, start=start, end=end))
+            sentences.append(Sentence(text=text, start=start, end=end, speaker=None))
         buf.clear()
 
     for cue in dedupe_rolling(cues):
@@ -215,13 +216,14 @@ def dedupe_adjacent_sentences(sentences: list[Sentence]) -> list[Sentence]:
         text = collapse_echo(sentence.text)
         if not text:
             continue
-        current = Sentence(text=text, start=sentence.start, end=sentence.end)
+        current = Sentence(text=text, start=sentence.start, end=sentence.end, speaker=sentence.speaker)
         if kept and is_near_duplicate(kept[-1].text, current.text):
             prev = kept[-1]
+            speaker = current.speaker or prev.speaker
             if len(current.text) >= len(prev.text):
-                kept[-1] = Sentence(text=current.text, start=prev.start, end=max(prev.end, current.end))
+                kept[-1] = Sentence(text=current.text, start=prev.start, end=max(prev.end, current.end), speaker=speaker)
             else:
-                kept[-1] = Sentence(text=prev.text, start=prev.start, end=max(prev.end, current.end))
+                kept[-1] = Sentence(text=prev.text, start=prev.start, end=max(prev.end, current.end), speaker=speaker)
             continue
         kept.append(current)
     return kept

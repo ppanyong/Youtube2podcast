@@ -18,7 +18,7 @@ class Downloader:
 
 
 class Translator:
-    def translate(self, sentences, on_batch=None):
+    def translate(self, sentences, on_batch=None, on_partial=None, **kwargs):
         if on_batch:
             on_batch(1, 1)
         return [f"译：{text}" for text in sentences]
@@ -50,6 +50,7 @@ def _pipeline(store, media, **kwargs):
         Summarizer(),
         Speaker(),
         tag=lambda *args, **kw: None,
+        **kwargs,
     ), downloader
 
 
@@ -126,7 +127,7 @@ def test_pipeline_records_failure_and_keeps_the_queue_usable(tmp_path):
     store = TaskStore(tmp_path / "tasks.db")
 
     class Boom:
-        def translate(self, sentences, on_batch=None):
+        def translate(self, sentences, on_batch=None, on_partial=None, **kwargs):
             raise RuntimeError("翻译服务不可用")
 
     task = store.create("https://youtu.be/zzz999", "机器学习", str(tmp_path / "out"))
@@ -144,7 +145,7 @@ def test_failed_audio_step_continues_without_translating_again(tmp_path):
     translations = {"count": 0}
 
     class CountingTranslator:
-        def translate(self, sentences, on_batch=None):
+        def translate(self, sentences, on_batch=None, on_partial=None, **kwargs):
             translations["count"] += 1
             return [f"译：{text}" for text in sentences]
 

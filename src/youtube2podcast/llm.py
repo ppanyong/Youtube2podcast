@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import httpx
 
-from youtube2podcast.cancel import TaskCancelled, active_cancel
+from youtube2podcast.cancel import TaskCancelled, active_cancel, run_http
 
 
 class ContentBlocked(RuntimeError):
@@ -34,19 +34,12 @@ def build_complete(base_url: str, api_key: str, model: str, *, temperature: floa
                 {"role": "user", "content": user},
             ],
         }
-        with httpx.Client(timeout=180) as http:
+        timeout = httpx.Timeout(connect=20.0, read=300.0, write=60.0, pool=20.0)
+        with httpx.Client(timeout=timeout) as http:
             if cancel is not None and hasattr(cancel, "track_client"):
                 cancel.track_client(http)
             try:
-                response = http.post(
-                    endpoint,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json=payload,
-                )
-            except httpx.HTTPError as exc:
-                if cancel is not None and cancel.is_set():
-                    raise TaskCancelled() from exc
-                raise RuntimeError(f"无法连接大模型服务：{exc}") from exc
+                response = post_chat(http, endpoint, api_key, payload)
             finally:
                 if cancel is not None and hasattr(cancel, "untrack_client"):
                     cancel.untrack_client(http)
@@ -60,6 +53,33 @@ def build_complete(base_url: str, api_key: str, model: str, *, temperature: floa
         return chat_text(response.json())
 
     return complete
+
+
+def post_chat(http, endpoint: str, api_key: str, payload: dict, *, attempts: int = 3):
+    """同一批请求超时后重试。读超时说明已经连上，只是模型迟迟没有写完响应。"""
+    last: httpx.TimeoutException | None = None
+    for attempt in range(attempts):
+        cancel = active_cancel.get()
+        if cancel is not None and cancel.is_set():
+            raise TaskCancelled()
+        try:
+            return run_http(
+                http,
+                lambda: http.post(endpoint, headers={"Authorization": f"Bearer {api_key}"}, json=payload),
+            )
+        except TaskCancelled:
+            raise
+        except httpx.TimeoutException as exc:
+            last = exc
+            if attempt == attempts - 1:
+                if isinstance(exc, httpx.ReadTimeout):
+                    raise RuntimeError(f"大模型超过 5 分钟没有返回，同一批已重试 {attempts} 次") from exc
+                raise RuntimeError(f"无法连接大模型服务：{exc}") from exc
+        except httpx.HTTPError as exc:
+            if cancel is not None and cancel.is_set():
+                raise TaskCancelled() from exc
+            raise RuntimeError(f"无法连接大模型服务：{exc}") from exc
+    raise RuntimeError(f"无法连接大模型服务：{last}")
 
 
 def chat_text(data) -> str:
