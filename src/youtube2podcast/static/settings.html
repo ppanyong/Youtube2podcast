@@ -86,18 +86,27 @@
       <label for="llm-model">模型</label>
       <input id="llm-model" required />
       <h2>语音</h2>
-      <label for="tts-base">接口地址</label>
-      <input id="tts-base" required />
-      <label for="tts-key">密钥</label>
-      <input id="tts-key" type="password" autocomplete="off" />
-      <label for="tts-model">模型</label>
-      <input id="tts-model" required />
+      <label for="tts-provider">TTS 引擎</label>
+      <select id="tts-provider">
+        <option value="siliconflow">硅基流动 · CosyVoice</option>
+        <option value="edge">Edge TTS（微软在线朗读）</option>
+      </select>
+      <p class="hint">默认仍用硅基流动。Edge 无需密钥，适合试听与省额度。</p>
+      <div id="silicon-fields">
+        <label for="tts-base">接口地址</label>
+        <input id="tts-base" />
+        <label for="tts-key">密钥</label>
+        <input id="tts-key" type="password" autocomplete="off" />
+        <label for="tts-model">模型</label>
+        <input id="tts-model" />
+      </div>
       <label for="tts-voice-pick">人声</label>
       <select id="tts-voice-pick"></select>
       <input id="tts-voice" />
       <p class="hint" id="voice-note"></p>
       <label for="tts-speed">语速</label>
       <input id="tts-speed" type="number" min="0.25" max="4" step="any" value="1" required />
+      <p class="hint">多人对话会按英文字幕做文本分人，翻译时保留 A/B/C，再绑定不同音色；不再下载原片音轨做音高分析。</p>
       <h2>默认成品目录</h2>
       <div class="picker-row">
         <input id="default-output" readonly placeholder="选择一个目录" />
@@ -106,7 +115,7 @@
       <p class="error" id="settings-error"></p>
       <p class="ok" id="settings-ok"></p>
       <button type="submit" id="save-settings">保存并生效</button>
-      <p class="hint">人声列表跟着硅基流动走。列不出来或选中的音色不可用时，会退回已保存的音色，任务照常继续。专辑名由每条视频的标题决定。</p>
+      <p class="hint">人声列表随所选引擎变化。列不出来或选中的音色不可用时，会退回已保存的音色，任务照常继续。专辑名由每条视频的标题决定。</p>
     </form>
     <footer class="copy">Copyright © 2026 成长书房 · MIT License</footer>
   </div>
@@ -124,10 +133,43 @@
     const ok = document.getElementById("settings-ok");
     const voicePick = document.getElementById("tts-voice-pick");
     const voiceInput = document.getElementById("tts-voice");
+    const providerSelect = document.getElementById("tts-provider");
+    const siliconDefaults = {
+      model: "FunAudioLLM/CosyVoice2-0.5B",
+      voice: "FunAudioLLM/CosyVoice2-0.5B:diana",
+      base: "https://api.siliconflow.cn/v1",
+    };
+    const edgeDefaults = { model: "edge", voice: "zh-CN-XiaoxiaoNeural" };
+
+    function syncProviderFields() {
+      const edge = providerSelect.value === "edge";
+      document.getElementById("silicon-fields").hidden = edge;
+      document.getElementById("tts-base").required = !edge;
+      document.getElementById("tts-model").required = !edge;
+      if (edge) {
+        if (!document.getElementById("tts-model").value || document.getElementById("tts-model").value.includes("CosyVoice")) {
+          document.getElementById("tts-model").value = edgeDefaults.model;
+        }
+        if (!voiceInput.value || voiceInput.value.includes("CosyVoice") || voiceInput.value.includes(":")) {
+          voiceInput.value = edgeDefaults.voice;
+        }
+      } else {
+        if (!document.getElementById("tts-model").value || document.getElementById("tts-model").value === "edge") {
+          document.getElementById("tts-model").value = siliconDefaults.model;
+        }
+        if (!voiceInput.value || voiceInput.value.startsWith("zh-")) {
+          voiceInput.value = siliconDefaults.voice;
+        }
+        if (!document.getElementById("tts-base").value) {
+          document.getElementById("tts-base").value = siliconDefaults.base;
+        }
+      }
+    }
 
     function fill(data) {
       document.getElementById("llm-base").value = data.llm_base_url || "";
       document.getElementById("llm-model").value = data.llm_model || "";
+      providerSelect.value = data.tts_provider || "siliconflow";
       document.getElementById("tts-base").value = data.tts_base_url || "";
       document.getElementById("tts-model").value = data.tts_model || "";
       voiceInput.value = data.tts_voice || "";
@@ -137,12 +179,14 @@
       document.getElementById("tts-key").value = "";
       document.getElementById("llm-key").placeholder = data.llm_api_key_set ? `已保存 ${data.llm_api_key_hint}，留空则保持` : "密钥";
       document.getElementById("tts-key").placeholder = data.tts_api_key_set ? `已保存 ${data.tts_api_key_hint}，留空则保持` : "密钥";
+      syncProviderFields();
     }
 
     async function loadVoices(current) {
       const note = document.getElementById("voice-note");
       try {
-        const response = await fetch("/api/voices");
+        const provider = providerSelect.value || "siliconflow";
+        const response = await fetch("/api/voices?provider=" + encodeURIComponent(provider));
         const data = await response.json();
         const voices = data.voices || [];
         if (!voices.length) {
@@ -157,7 +201,9 @@
         const match = voices.some((item) => item.id === current);
         voicePick.value = match ? current : "";
         voiceInput.hidden = match;
-        note.textContent = "可选人声来自硅基流动。选不了时，这里的填写仍然生效。";
+        note.textContent = data.provider === "edge"
+          ? "可选人声来自 Edge 中文 Neural。"
+          : "可选人声来自硅基流动。选不了时，这里的填写仍然生效。";
       } catch (err) {
         voicePick.hidden = true;
         note.textContent = "人声列表没有加载，不影响使用已保存的音色。";
@@ -173,6 +219,11 @@
       }
     });
 
+    providerSelect.addEventListener("change", async () => {
+      syncProviderFields();
+      await loadVoices(voiceInput.value || "");
+    });
+
     fetch("/api/settings").then((r) => r.json()).then(async (data) => {
       fill(data);
       await loadVoices(data.tts_voice || "");
@@ -184,6 +235,7 @@
       ok.textContent = "";
       const button = document.getElementById("save-settings");
       button.disabled = true;
+      const provider = providerSelect.value || "siliconflow";
       try {
         const response = await fetch("/api/settings", {
           method: "PUT",
@@ -192,9 +244,10 @@
             llm_base_url: document.getElementById("llm-base").value,
             llm_api_key: document.getElementById("llm-key").value,
             llm_model: document.getElementById("llm-model").value,
+            tts_provider: provider,
             tts_base_url: document.getElementById("tts-base").value,
             tts_api_key: document.getElementById("tts-key").value,
-            tts_model: document.getElementById("tts-model").value,
+            tts_model: provider === "edge" ? "edge" : document.getElementById("tts-model").value,
             tts_voice: voiceInput.value,
             tts_speed: Number(document.getElementById("tts-speed").value),
             output_dir: document.getElementById("default-output").value,

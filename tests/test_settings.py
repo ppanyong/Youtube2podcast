@@ -12,6 +12,7 @@ def _restore_env(before: dict) -> None:
         "LLM_BASE_URL",
         "LLM_API_KEY",
         "LLM_MODEL",
+        "TTS_PROVIDER",
         "TTS_BASE_URL",
         "TTS_API_KEY",
         "TTS_MODEL",
@@ -32,6 +33,7 @@ def _settings(**kwargs) -> Settings:
         llm_base_url="https://api.openai.com/v1",
         llm_api_key="sk-old-key",
         llm_model="gpt-4o-mini",
+        tts_provider="siliconflow",
         tts_base_url="https://api.siliconflow.cn/v1",
         tts_api_key="tts-old",
         tts_model="FunAudioLLM/CosyVoice2-0.5B",
@@ -60,6 +62,7 @@ def test_blank_secret_keeps_the_saved_key_and_rewrites_env(tmp_path):
                 "llm_base_url": "https://open.bigmodel.cn/api/paas/v4",
                 "llm_api_key": "",
                 "llm_model": "glm-4-flash",
+                "tts_provider": "siliconflow",
                 "tts_base_url": "https://api.siliconflow.cn/v1",
                 "tts_api_key": "••••old",
                 "tts_model": "FunAudioLLM/CosyVoice2-0.5B",
@@ -78,8 +81,34 @@ def test_blank_secret_keeps_the_saved_key_and_rewrites_env(tmp_path):
     assert "LLM_API_KEY=sk-old-key" in text
     assert "TTS_API_KEY=tts-old" in text
     assert saved["llm_api_key_hint"] == "••••-key"
+    assert saved["tts_provider"] == "siliconflow"
     assert "sk-old-key" not in str(saved)
     assert seen == ["glm-4-flash"]
+
+
+def test_edge_provider_skips_tts_api_url_requirement(tmp_path):
+    env = tmp_path / ".env"
+    before = os.environ.copy()
+    store = SettingsStore(_settings(), env)
+    try:
+        saved = store.update(
+            {
+                "llm_base_url": "https://api.openai.com/v1",
+                "llm_api_key": "",
+                "llm_model": "gpt-4o-mini",
+                "tts_provider": "edge",
+                "tts_base_url": "",
+                "tts_api_key": "",
+                "tts_model": "edge",
+                "tts_voice": "zh-CN-XiaoxiaoNeural",
+                "tts_speed": 1,
+                "output_dir": "/tmp/learn",
+            }
+        )
+    finally:
+        _restore_env(before)
+    assert saved["tts_provider"] == "edge"
+    assert saved["tts_voice"] == "zh-CN-XiaoxiaoNeural"
 
 
 def test_settings_page_updates_the_next_pipeline(tmp_path):
@@ -91,13 +120,17 @@ def test_settings_page_updates_the_next_pipeline(tmp_path):
         with TestClient(app) as client:
             current = client.get("/api/settings").json()
             assert current["llm_model"] == "gpt-4o-mini"
-            assert "保存并生效" in client.get("/settings").text
+            page = client.get("/settings").text
+            assert "保存并生效" in page
+            assert "speaker-mode" not in page
+            assert "文本分人" in page
             saved = client.put(
                 "/api/settings",
                 json={
                     "llm_base_url": "https://api.openai.com/v1",
                     "llm_api_key": "sk-new-key",
                     "llm_model": "gpt-4.1-mini",
+                    "tts_provider": "siliconflow",
                     "tts_base_url": "https://api.siliconflow.cn/v1",
                     "tts_api_key": "",
                     "tts_model": "FunAudioLLM/CosyVoice2-0.5B",

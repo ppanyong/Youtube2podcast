@@ -27,6 +27,7 @@ class Settings:
     llm_base_url: str
     llm_api_key: str
     llm_model: str
+    tts_provider: str
     tts_base_url: str
     tts_api_key: str
     tts_model: str
@@ -37,6 +38,13 @@ class Settings:
     db_path: Path
     host: str
     port: int
+
+
+def normalize_tts_provider(value: str) -> str:
+    text = (value or "").strip().lower()
+    if text in {"edge", "edge-tts", "microsoft"}:
+        return "edge"
+    return "siliconflow"
 
 
 def load_settings() -> Settings:
@@ -56,6 +64,7 @@ def load_settings() -> Settings:
         llm_base_url=os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         llm_model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        tts_provider=normalize_tts_provider(os.getenv("TTS_PROVIDER", "siliconflow")),
         tts_base_url=os.getenv("TTS_BASE_URL", "https://api.siliconflow.cn/v1"),
         tts_api_key=os.getenv("TTS_API_KEY", ""),
         tts_model=os.getenv("TTS_MODEL", "FunAudioLLM/CosyVoice2-0.5B"),
@@ -99,6 +108,7 @@ def write_env(path: Path, settings: Settings) -> None:
         "LLM_BASE_URL": settings.llm_base_url,
         "LLM_API_KEY": settings.llm_api_key,
         "LLM_MODEL": settings.llm_model,
+        "TTS_PROVIDER": settings.tts_provider,
         "TTS_BASE_URL": settings.tts_base_url,
         "TTS_API_KEY": settings.tts_api_key,
         "TTS_MODEL": settings.tts_model,
@@ -156,6 +166,7 @@ class SettingsStore:
             "llm_api_key_set": bool(current.llm_api_key),
             "llm_api_key_hint": mask_secret(current.llm_api_key),
             "llm_model": current.llm_model,
+            "tts_provider": current.tts_provider,
             "tts_base_url": current.tts_base_url,
             "tts_api_key_set": bool(current.tts_api_key),
             "tts_api_key_hint": mask_secret(current.tts_api_key),
@@ -177,17 +188,28 @@ class SettingsStore:
                 raise SettingsError("语速需要是数字") from exc
             if not 0.25 <= speed <= 4:
                 raise SettingsError("语速需要在 0.25 到 4 之间")
+            provider = normalize_tts_provider(str(patch.get("tts_provider", current.tts_provider)))
             model = str(patch.get("llm_model", "")).strip()
             voice_model = str(patch.get("tts_model", "")).strip()
             voice = str(patch.get("tts_voice", "")).strip()
-            if not model or not voice_model or not voice:
+            if not model or not voice:
                 raise SettingsError("模型和音色不能为空")
+            if provider == "edge":
+                voice_model = voice_model or "edge"
+                base_url = str(patch.get("tts_base_url", current.tts_base_url) or "").strip().rstrip("/")
+                if base_url and not base_url.startswith(("http://", "https://")):
+                    raise SettingsError("语音接口需要以 http:// 或 https:// 开头")
+            else:
+                if not voice_model:
+                    raise SettingsError("模型和音色不能为空")
+                base_url = _http_url(str(patch.get("tts_base_url", "")), "语音接口")
             updated = replace(
                 current,
                 llm_base_url=_http_url(str(patch.get("llm_base_url", "")), "大模型接口"),
                 llm_api_key=llm_key,
                 llm_model=model,
-                tts_base_url=_http_url(str(patch.get("tts_base_url", "")), "语音接口"),
+                tts_provider=provider,
+                tts_base_url=base_url,
                 tts_api_key=tts_key,
                 tts_model=voice_model,
                 tts_voice=voice,

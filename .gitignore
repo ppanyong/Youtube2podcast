@@ -14,3 +14,6 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+
+# 本机嵌套运行副本，不要进仓库。
+/Youtube2podcast/

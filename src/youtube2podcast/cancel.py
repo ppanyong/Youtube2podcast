@@ -4,7 +4,9 @@ import os
 import signal
 import subprocess
 import threading
+from collections.abc import Callable
 from contextvars import ContextVar
+from typing import TypeVar
 
 
 class TaskCancelled(Exception):
@@ -12,6 +14,7 @@ class TaskCancelled(Exception):
 
 
 active_cancel: ContextVar[Cancellation | None] = ContextVar("active_cancel", default=None)
+T = TypeVar("T")
 
 
 class Cancellation:
@@ -87,6 +90,34 @@ def run_process(args: list[str]) -> subprocess.CompletedProcess:
     finally:
         if cancel is not None and hasattr(cancel, "untrack_process"):
             cancel.untrack_process(proc)
+
+
+def run_http(client, call: Callable[[], T]) -> T:
+    """在旁路线程跑同步 HTTP；点停止时关掉客户端并立刻当作已取消。"""
+    cancel = active_cancel.get()
+    if cancel is not None and cancel.is_set():
+        raise TaskCancelled()
+    box: dict = {}
+
+    def work() -> None:
+        try:
+            box["value"] = call()
+        except BaseException as exc:  # noqa: BLE001 - 要把取消和网络错误都交回主线程
+            box["error"] = exc
+
+    thread = threading.Thread(target=work, name="youtube2podcast-http", daemon=True)
+    thread.start()
+    while thread.is_alive():
+        thread.join(0.2)
+        if cancel is not None and cancel.is_set():
+            _close(client)
+            raise TaskCancelled()
+    if "error" in box:
+        exc = box["error"]
+        if cancel is not None and cancel.is_set():
+            raise TaskCancelled() from exc
+        raise exc
+    return box["value"]
 
 
 def _kill(proc: subprocess.Popen) -> None:

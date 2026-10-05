@@ -30,10 +30,12 @@ class Media:
     cues: list[Cue] | None
     chapters: list[Chapter]
     thumbnail_path: Path | None
+    turns: list | None = None
+    speaker_genders: dict | None = None
 
 
 class YtDlpDownloader:
-    """只取元数据、字幕和封面，不下载整段视频。"""
+    """取英文字幕和封面，不下载原片音轨。"""
 
     def probe(self, url: str, workdir: Path) -> Media:
         info = self._extract(
